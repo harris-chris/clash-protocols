@@ -1,6 +1,7 @@
-{ nixpkgs ? import ./nix/nixpkgs.nix {} }:
+{ pkgs
+, gitignore }:
 
-with nixpkgs.pkgs;
+with pkgs;
 with gitignore;
 
 haskellPackages.callCabal2nix "clash-protocols" (gitignoreSource ./clash-protocols) {}
