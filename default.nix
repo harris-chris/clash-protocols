@@ -2,6 +2,6 @@
 , gitignore }:
 
 with pkgs;
-with gitignore;
+with gitignore.lib;
 
 haskellPackages.callCabal2nix "clash-protocols" (gitignoreSource ./clash-protocols) {}
