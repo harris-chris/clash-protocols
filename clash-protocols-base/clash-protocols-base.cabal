@@ -82,7 +82,6 @@ common common-options
   build-depends:
     base >= 4.15.0.0,
     Cabal,
-
     clash-prelude >= 1.8.1 && < 1.10,
     ghc-typelits-natnormalise,
     ghc-typelits-extra,
@@ -91,11 +90,17 @@ common common-options
 custom-setup
   setup-depends:
     base          >= 4.11 && <5,
+    ghc-typelits-extra,
     Cabal         >= 2.4,
 
 library
   import: common-options
   hs-source-dirs: src
+
+  ghc-options:
+    -package ghc-typelits-extra
+    -package ghc-typelits-natnormalise
+    -package ghc-typelits-knownnat
 
   if flag(large-tuples)
     CPP-Options: -DLARGE_TUPLES

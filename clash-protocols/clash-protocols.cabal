@@ -94,7 +94,7 @@ common common-options
     base >= 4.15.0.0,
     Cabal,
 
-    clash-prelude >= 1.8.1 && < 1.10,
+    clash-prelude >= 1.8.5 && < 1.10,
     ghc-typelits-natnormalise,
     ghc-typelits-extra,
     ghc-typelits-knownnat
@@ -120,7 +120,6 @@ library
     , data-default ^>= 0.7.1.1
     , deepseq
     , extra
-    , ghc >= 8.7 && < 9.7
     , hashable
     , hedgehog >= 1.0.2
     , lifted-async

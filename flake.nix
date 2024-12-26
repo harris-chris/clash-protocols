@@ -2,6 +2,7 @@
   description = "clash-protocols";
 
   inputs = {
+    ghc962-nixpkgs.url = "github:NixOS/nixpkgs/5148520bfab61f99fd25fb9ff7bfbb50dad3c9db";
     nixpkgs.url = "github:NixOS/nixpkgs";
     gitignore =  {
       url = "github:hercules-ci/gitignore.nix";
@@ -12,6 +13,7 @@
 
   outputs = {
     self
+    , ghc962-nixpkgs
     , nixpkgs
     , gitignore
     , clash-compiler
@@ -23,8 +25,21 @@
       pkgs = import nixpkgs {
         inherit system;
         overlays = [ 
+          ghc962Overlay
           clash-compiler.overlays.default 
         ];
+      };
+
+      ghc962Overlay = let
+        ghc962Pkgs = import ghc962-nixpkgs { 
+          inherit system;
+        };
+      in self: super: {
+        haskell = super.lib.recursiveUpdate super.haskell 
+          {
+            compiler = { ghc962 = ghc962Pkgs.haskell.compiler.ghc962; };
+            packages = { ghc962 = ghc962Pkgs.haskell.packages.ghc962; };
+          };
       };
 
       clashProtocolsOverlay = self: super:
@@ -46,24 +61,110 @@
             clashPkgs.clash-term
             clashPkgs.clash-testsuite
           ];
+
+          # clashBuildOverrides = builtins.foldl' (acc: x: 
+          #   acc // 
+          # ) clashGetBuildInputsFrom
       
           clashBuildInputs = [
             clashPkgs.cabal-install
             clashPkgs.haskell-language-server
           ] ++ builtins.concatMap (pkg: pkg.env.nativeBuildInputs) clashGetBuildInputsFrom;
 
-          clash-protocols-base = super.haskellPackages.callCabal2nix 
-            "clash-protocols-base" 
-            (gitignore.lib.gitignoreSource ./clash-protocols-base) {};
+          haskellOverridesFromClashPkgs =
+            let  
+              getBuildInputsFromPkg = pkg: 
+                let 
+                  depsFromPkg = builtins.filter 
+                    (x: x != null) 
+                    pkg.buildInputs;
+                in builtins.listToAttrs (map 
+                  (dep: { 
+                    name = dep.name; 
+                    value = dep; 
+                  }) 
+                  depsFromPkg);
+              getPropagatedBuildInputsFromPkg = pkg: 
+                let 
+                  depsFromPkg = builtins.filter 
+                    (x: x != null) 
+                    pkg.propagatedBuildInputs;
+                in builtins.listToAttrs (map 
+                  (dep: { 
+                    name = dep.name; 
+                    value = dep; 
+                  }) 
+                  depsFromPkg);
+            in builtins.foldl' 
+              (acc: x: acc // getBuildInputsFromPkg x // getPropagatedBuildInputsFromPkg x )
+              {}
+              clashGetBuildInputsFrom;              
 
-          clash-protocols = self.haskellPackages.callCabal2nix
-            "clash-protocols"
-            (gitignore.lib.gitignoreSource ./clash-protocols) { inherit clash-protocols-base; };
+          clash-protocols-base = 
+            let 
+              haskellPkgs = pkgs.haskell.packages.ghc962.override {
+                overrides = self: super: 
+                  builtins.trace (builtins.toJSON haskellOverridesFromClashPkgs) haskellOverridesFromClashPkgs
+                  // {
+                    doctest = pkgs.haskell.lib.dontCheck 
+                      (self.callHackage "doctest" "0.21.1" {});
+                    clash-prelude = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+                      pkg = "clash-prelude";
+                      ver = "1.8.1";
+                      sha256 = "sha256-HUt8Aw5vMFWThp26e/FdVkcjGQK8rvUV/ZMlv/KvHgg=";
+                    } {});
+                    kan-extensions = pkgs.haskell.lib.dontCheck 
+                      (self.callHackage "kan-extensions" "5.2.5" {});
+                    circuit-notation = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+                      pkg = "circuit-notation";
+                      ver = "0.1.0.0";
+                      sha256 = "sha256-D3A51HiTtWJTx2A8BgHpelBl9df62DA2QYYjFkSsGM8=";
+                    } {});
+                    # lens = clashBuildInputs.lens;
+
+                    # lens = pkgs.haskell.lib.dontCheck 
+                    #   (self.callHackage "lens" "4.10" {});
+                    # doctest = pkgs.haskell.lib.dontCheck (super.callHackageDirect {
+                    #   pkg = "doctest";
+                    #   ver = "0.21.0";
+                    #   sha256 = "sha256-mAk1P89jbaA73nIQYZaelnvpV2qiXeiUKciFqN9Kdm8=";
+                    # } {});
+                    # clash-prelude = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+                    #   pkg = "clash-prelude";
+                    #   ver = "1.8.1";
+                    #   sha256 = "sha256-+8tM4lxvidk1M/iwqkrXC38gsXMR/YWCoQz7P6KezMY=";
+                    # } {});
+                  } 
+                  ;
+              };
+            in haskellPkgs.callCabal2nix 
+              "clash-protocols-base" 
+              (gitignore.lib.gitignoreSource ./clash-protocols-base) {};
+
+          # clash-protocols = 
+          #   let 
+          #     haskellPkgs = pkgs.haskell.packages.ghc962.override {
+          #       overrides = self: super: {
+          #         # circuit-notation = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+          #         #   pkg = "circuit-notation";
+          #         #   ver = "0.1.0.0";
+          #         #   sha256 = "sha256-D3A51HiTtWJTx2A8BgHpelBl9df62DA2QYYjFkSsGM8=";
+          #         # } {});
+          #         clash-prelude = pkgs.clashPackages-ghc962.clash-prelude;
+          #       };
+          #     };
+          #   in haskellPkgs.callCabal2nix
+          #     "clash-protocols"
+          #     (gitignore.lib.gitignoreSource ./clash-protocols) { 
+          #       inherit clash-protocols-base; 
+          #     };
         in {
-          inherit clash-protocols clash-protocols-base;
+          # inherit clash-protocols clash-protocols-base;
+          inherit clash-protocols-base;
+          inherit (clashPkgs) clash-prelude;
         }; 
       in {
-        packages.${system} = clashProtocolsOverlay pkgs pkgs;
+        packages.${system} = (clashProtocolsOverlay pkgs pkgs);
         overlays.default = clashProtocolsOverlay;
       };
 }
