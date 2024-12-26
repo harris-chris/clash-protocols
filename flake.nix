@@ -62,10 +62,6 @@
             clashPkgs.clash-testsuite
           ];
 
-          # clashBuildOverrides = builtins.foldl' (acc: x: 
-          #   acc // 
-          # ) clashGetBuildInputsFrom
-      
           clashBuildInputs = [
             clashPkgs.cabal-install
             clashPkgs.haskell-language-server
@@ -75,20 +71,10 @@
             let  
               getBuildInputsFromPkg = pkg: 
                 let 
+                  allDeps = pkg.buildInputs ++ pkg.propagatedBuildInputs;
                   depsFromPkg = builtins.filter 
                     (x: x != null) 
-                    pkg.buildInputs;
-                in builtins.listToAttrs (map 
-                  (dep: { 
-                    name = dep.name; 
-                    value = dep; 
-                  }) 
-                  depsFromPkg);
-              getPropagatedBuildInputsFromPkg = pkg: 
-                let 
-                  depsFromPkg = builtins.filter 
-                    (x: x != null) 
-                    pkg.propagatedBuildInputs;
+                    allDeps;
                 in builtins.listToAttrs (map 
                   (dep: { 
                     name = dep.name; 
@@ -96,39 +82,38 @@
                   }) 
                   depsFromPkg);
             in builtins.foldl' 
-              (acc: x: acc // getBuildInputsFromPkg x // getPropagatedBuildInputsFromPkg x )
+              (acc: x: acc // getBuildInputsFromPkg x)
               {}
               clashGetBuildInputsFrom;              
 
           haskellPkgs = pkgs.haskell.packages.ghc962.override {
             overrides = self: super: 
-              builtins.trace (builtins.toJSON haskellOverridesFromClashPkgs) haskellOverridesFromClashPkgs
-              // {
-                doctest = pkgs.haskell.lib.dontCheck 
-                  (self.callHackage "doctest" "0.21.1" {});
-                clash-prelude = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
-                  pkg = "clash-prelude";
-                  ver = "1.8.1";
-                  sha256 = "sha256-HUt8Aw5vMFWThp26e/FdVkcjGQK8rvUV/ZMlv/KvHgg=";
-                } {});
-                clash-prelude-hedgehog = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
-                  pkg = "clash-prelude-hedgehog";
-                  ver = "1.8.1";
-                  sha256 = "sha256-RWjqzTlgp5oWpBROZ+hp4Mc3nwh1Xro18oQjNtJnGvY=";
-                } {});
-                kan-extensions = pkgs.haskell.lib.dontCheck 
-                  (self.callHackage "kan-extensions" "5.2.5" {});
-                circuit-notation = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
-                  pkg = "circuit-notation";
-                  ver = "0.1.0.0";
-                  sha256 = "sha256-D3A51HiTtWJTx2A8BgHpelBl9df62DA2QYYjFkSsGM8=";
-                } {});
-                clash-protocols-base = self.callCabal2nix 
-                    "clash-protocols-base" 
-                    (gitignore.lib.gitignoreSource ./clash-protocols-base) {};
-                clash-protocols = self.callCabal2nix 
-                    "clash-protocols" 
-                    (gitignore.lib.gitignoreSource ./clash-protocols) {};
+              haskellOverridesFromClashPkgs // {
+              doctest = pkgs.haskell.lib.dontCheck 
+                (self.callHackage "doctest" "0.21.1" {});
+              clash-prelude = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+                pkg = "clash-prelude";
+                ver = "1.8.1";
+                sha256 = "sha256-HUt8Aw5vMFWThp26e/FdVkcjGQK8rvUV/ZMlv/KvHgg=";
+              } {});
+              clash-prelude-hedgehog = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+                pkg = "clash-prelude-hedgehog";
+                ver = "1.8.1";
+                sha256 = "sha256-RWjqzTlgp5oWpBROZ+hp4Mc3nwh1Xro18oQjNtJnGvY=";
+              } {});
+              kan-extensions = pkgs.haskell.lib.dontCheck 
+                (self.callHackage "kan-extensions" "5.2.5" {});
+              circuit-notation = pkgs.haskell.lib.dontCheck (self.callHackageDirect {
+                pkg = "circuit-notation";
+                ver = "0.1.0.0";
+                sha256 = "sha256-D3A51HiTtWJTx2A8BgHpelBl9df62DA2QYYjFkSsGM8=";
+              } {});
+              clash-protocols-base = self.callCabal2nix 
+                  "clash-protocols-base" 
+                  (gitignore.lib.gitignoreSource ./clash-protocols-base) {};
+              clash-protocols = self.callCabal2nix 
+                  "clash-protocols" 
+                  (gitignore.lib.gitignoreSource ./clash-protocols) {};
               };
             };
         in {
