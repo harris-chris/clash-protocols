@@ -114,9 +114,13 @@ import Prelude hiding (
 import qualified Data.Bifunctor as B
 import Data.Bool (bool)
 import qualified Data.Coerce as Coerce
+#if MIN_VERSION_base(4,19,0)
+import qualified Data.Functor as Functor (unzip)
+#else
+import qualified Data.List.NonEmpty as Functor (unzip)
+#endif
 import Data.Kind (Type)
 import Data.List ((\\))
-import qualified Data.List.NonEmpty
 import qualified Data.Maybe as Maybe
 import Data.Proxy
 import qualified Prelude as P
@@ -862,7 +866,7 @@ roundrobinCollect Parallel =
     nacks = C.repeat (Ack False)
     acks = Maybe.fromMaybe nacks ((\i -> C.replace i ack nacks) <$> iM)
     dat1 = Maybe.fromMaybe NoData dat0
-    (iM, dat0) = Data.List.NonEmpty.unzip dats1
+    (iM, dat0) = Functor.unzip dats1
     dats1 = C.fold @(n C.- 1) (<|>) (C.zipWith goDat C.indicesI dats0)
 
     goDat i dat
@@ -898,6 +902,28 @@ registerBwd =
     iDatX1 = C.regEn (C.errorX "registerBwd") oAck iDatX0
     oDat = toData <$> valid <*> (C.mux oAck iDatX0 iDatX1)
 
+-- Fourmolu only allows CPP conditions on complete top-level definitions. This
+-- function is not exported.
+blockRamUNoClear ::
+  forall n dom a addr.
+  ( HasCallStack
+  , C.HiddenClockResetEnable dom
+  , C.NFDataX a
+  , Enum addr
+  , C.NFDataX addr
+  , 1 <= n
+  ) =>
+  C.SNat n ->
+  Signal dom addr ->
+  Signal dom (Maybe (addr, a)) ->
+  Signal dom a
+#if MIN_VERSION_clash_prelude(1,9,0)
+blockRamUNoClear = C.blockRamU C.NoClearOnReset
+#else
+blockRamUNoClear n =
+  C.blockRamU C.NoClearOnReset n (C.errorX "No reset function")
+#endif
+
 {- | A fifo buffer with user-provided depth. Uses blockram to store data. Can
 handle simultaneous write and read (full throughput rate).
 -}
@@ -919,7 +945,7 @@ fifo fifoDepth = Circuit $ C.hideReset circuitFunction
     -- initialize bram
     brRead =
       C.readNew
-        (C.blockRamU C.NoClearOnReset fifoDepth (C.errorX "No reset function"))
+        (blockRamUNoClear fifoDepth)
         brReadAddr
         brWrite
     -- run the state machine (a mealy machine)

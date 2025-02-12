@@ -1,10 +1,10 @@
 name: CI
 
-# Trigger the workflow on all pull requests and pushes/merges to master branch
+# Trigger the workflow on all pull requests and pushes/merges to main branch
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [main]
 
 
 concurrency:
@@ -22,13 +22,19 @@ jobs:
       - name: Setup Stack / GHC
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.4.8'
-          cabal-version: '3.10.2.1'
+          ghc-version: '9.8.4'
+          cabal-version: '3.14.1.1'
           enable-stack: true
           stack-version: 'latest'
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      # Ask Stack to use system GHC instead of installing its own copy
+      - name: Use system GHC
+        run: |
+          stack config set system-ghc --global true
+
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v4
+        id: cache
         with:
           path: ~/.stack
           key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ github.ref }}-${{ github.sha }}
@@ -37,33 +43,51 @@ jobs:
             ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ github.ref }}-
             ${{ runner.os }}-ghc-${{ matrix.ghc }}-
 
-      # Ask Stack to use system GHC instead of installing its own copy
-      - name: Use system GHC
-        run: |
-          stack config set system-ghc --global true
+      - name: Install dependencies
+        run: stack build --test --only-dependencies
+
+      # Cache dependencies already at this point, so that we do not have to
+      # rebuild them should the subsequent steps fail
+      - name: Save cached dependencies
+        uses: actions/cache/save@v4
+        # Trying to save over an existing cache gives distracting
+        # "Warning: Cache save failed." since they are immutable
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        with:
+          path: ~/.stack
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ github.ref }}-${{ github.sha }}
 
       - name: Test with Stack
         run: |
           .ci/test_stack.sh
 
   cabal:
-    name: Cabal tests - ghc ${{ matrix.ghc }} / clash ${{ matrix.clash }}
+    name: Cabal tests - ghc ${{ matrix.ghc }} / clash ${{ matrix.clash }} / doc ${{ matrix.check_haddock }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
         clash:
-          - "1.8.1"
+          - "1.8.2"
         cabal:
-          - "3.10"
+          - "3.14.1.1"
         ghc:
           - "9.0.2"
           - "9.2.8"
           - "9.4.8"
-          - "9.6.4"
+          - "9.8.4"
+          - "9.10.1"
+        include:
+          - check_haddock: "False"
+          - ghc: "9.6.6"
+            check_haddock: "True"
+            os: "ubuntu-latest"
+            clash: "1.8.2"
+            cabal: "3.14.1.1"
 
     env:
+      check_haddock: ${{ matrix.check_haddock }}
       clash_version: ${{ matrix.clash }}
 
     steps:
@@ -79,15 +103,21 @@ jobs:
 
       - name: Use CI specific settings
         run: |
-          cp .ci/cabal.project.local .
+          .ci/apply_settings.sh
 
       - name: Setup CI
         run: |
           cabal v2-freeze
           mv cabal.project.freeze frozen
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      - name: Restore cached dependencies
+        uses: actions/cache/restore@v4
+        id: cache
+        env:
+          key:
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-cabal-${{
+            steps.setup-haskell.outputs.cabal-version }}${{
+            matrix.project-variant }}
         with:
           path: ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
           key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ matrix.clash }}-${{ hashFiles('frozen') }}
@@ -96,15 +126,30 @@ jobs:
             ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ matrix.clash }}-
             ${{ runner.os }}-ghc-${{ matrix.ghc }}-
 
+      - name: Install dependencies
+        run: cabal v2-build all --enable-tests --only-dependencies
+
+      # Cache dependencies already at this point, so that we do not have to
+      # rebuild them should the subsequent steps fail
+      - name: Save cached dependencies
+        uses: actions/cache/save@v4
+        # Trying to save over an existing cache gives distracting
+        # "Warning: Cache save failed." since they are immutable
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ matrix.clash }}-${{ hashFiles('frozen') }}
+
       - name: Build
         run: |
-          cabal build all --constraint=clash-prelude==$clash_version -fci
+          cabal v2-build all --enable-tests
 
       - name: Test
         run: |
           .ci/test_cabal.sh
 
       - name: Documentation
+        if: ${{ matrix.check_haddock == 'True' }}
         run: |
           .ci/build_docs.sh
 
