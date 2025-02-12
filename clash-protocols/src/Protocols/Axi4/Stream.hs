@@ -12,11 +12,14 @@ Types and instance declarations for the AXI4-stream protocol.
 -}
 module Protocols.Axi4.Stream where
 
+import qualified Prelude as P
+
 -- base
 import Control.DeepSeq (NFData)
 import Data.Hashable (Hashable, hashWithSalt)
 import qualified Data.Maybe as Maybe
 import Data.Proxy
+import Data.Coerce (coerce)
 
 -- clash-prelude
 import Clash.Prelude hiding (concat, length, take)
@@ -125,19 +128,25 @@ instance
     FwdPayload (Axi4Stream dom conf userType) =
       Axi4StreamM2S conf userType
 
-  toDfCircuit proxy = DfConv.toDfCircuitHelper proxy s0 blankOtp stateFn
-   where
-    s0 = ()
-    blankOtp = Nothing
-    stateFn ack _ otpItem =
-      pure (otpItem, Nothing, Maybe.isJust otpItem C.&& _tready ack)
+  toDfCircuit _ = fromSignals go
+    where
+      go (fwdIn, bwdIn) =
+        (
+          ( fmap coerce bwdIn
+          , pure (deepErrorX "Axi4Stream toDfCircuit: undefined")
+          )
+        , Df.dataToMaybe <$> P.fst fwdIn
+        )
 
-  fromDfCircuit proxy = DfConv.fromDfCircuitHelper proxy s0 blankOtp stateFn
-   where
-    s0 = ()
-    blankOtp = Axi4StreamS2M{_tready = False}
-    stateFn m2s ack _ =
-      pure (Axi4StreamS2M{_tready = ack}, m2s, False)
+  fromDfCircuit _ = fromSignals go
+    where
+      go (fwdIn, bwdIn) =
+        ( coerce <$> P.fst bwdIn
+        ,
+          ( fmap Df.maybeToData fwdIn
+          , pure (deepErrorX "Axi4Stream fromDfCircuit: undefined")
+          )
+        )
 
 instance
   (KnownAxi4StreamConfig conf, NFDataX userType, KnownDomain dom) =>
